@@ -1,1 +1,1 @@
-win desktop: https://measurement-circle-istanbul-helen.trycloudflare.com/vnc.html?autoconnect=true&resize=remote  run: https://github.com/jianbin1987-pixel/arm-mac-box/actions/runs/44315528627
+win desktop: https://lonely-replace-him-campbell.trycloudflare.com/vnc.html?autoconnect=true&resize=remote  run: https://github.com/jianbin1987-pixel/arm-mac-box/actions/runs/44315838300

@@ -7,6 +7,8 @@ jobs:
   mac:
     runs-on: macos-15
     timeout-minutes: 360
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - name: System info
@@ -17,15 +19,23 @@ jobs:
           echo "=== mem bytes ==="; sysctl -n hw.memsize
           echo "=== macOS ==="; sw_vers
           echo "=== disk ==="; df -h /
-      - name: Start tmate and publish address
+      - name: Start SSH tunnel and publish address
+        timeout-minutes: 12
         run: |
-          brew install tmate
-          tmate -S /tmp/tmate.sock new-session -d
-          tmate -S /tmp/tmate.sock wait tmate-ready
-          {
-            echo "ssh: $(tmate -S /tmp/tmate.sock display -p '#{tmate_ssh}')"
-            echo "web: $(tmate -S /tmp/tmate.sock display -p '#{tmate_web}')"
-          } > session.txt
+          set -x
+          mkdir -p ~/.ssh
+          echo "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK5RUAJ6lgLGMj6l0NO91EZXJeDtOnz3c3hkmykBHGxV hatch" >> ~/.ssh/authorized_keys
+          chmod 700 ~/.ssh; chmod 600 ~/.ssh/authorized_keys
+          sudo systemsetup -setremotelogin on || sudo launchctl load -w /System/Library/LaunchDaemons/ssh.plist || true
+          brew install cloudflared
+          nohup cloudflared tunnel --url localhost:22 --no-autoupdate > /tmp/cf.log 2>&1 &
+          URL=""
+          for i in $(seq 1 40); do
+            URL=$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' /tmp/cf.log | head -1)
+            [ -n "$URL" ] && break
+            sleep 3
+          done
+          echo "tunnel: $URL" > session.txt
           git config user.name "arm-mac-box"
           git config user.email "actions@github.com"
           git add session.txt

@@ -1,0 +1,23 @@
+name: win-probe
+
+on:
+  workflow_dispatch:
+
+jobs:
+  win:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: System info
+        run: |
+          $cpu = Get-CimInstance Win32_Processor
+          $cs = Get-CimInstance Win32_ComputerSystem
+          $os = Get-CimInstance Win32_OperatingSystem
+          $disk = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
+          Write-Output "CPU: $($cpu.Name)"
+          Write-Output "Cores: $($cpu.NumberOfCores) Logical: $($cpu.NumberOfLogicalProcessors)"
+          Write-Output "Arch: $env:PROCESSOR_ARCHITECTURE"
+          Write-Output "RAM bytes: $($cs.TotalPhysicalMemory)"
+          Write-Output "Machine: $($cs.Manufacturer) $($cs.Model)"
+          Write-Output "OS: $($os.Caption) Version: $($os.Version) Build: $($os.BuildNumber)"
+          Write-Output "DiskC size: $($disk.Size) free: $($disk.FreeSpace)"

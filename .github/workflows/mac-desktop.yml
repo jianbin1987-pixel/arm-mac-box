@@ -1,0 +1,66 @@
+name: mac-desktop
+
+on:
+  workflow_dispatch:
+
+jobs:
+  mac:
+    runs-on: macos-15
+    timeout-minutes: 360
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: SSH access via named tunnel
+        timeout-minutes: 12
+        env:
+          CF_TUNNEL_TOKEN: ${{ secrets.CF_TUNNEL_TOKEN }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK5RUAJ6lgLGMj6l0NO91EZXJeDtOnz3c3hkmykBHGxV hatch" >> ~/.ssh/authorized_keys
+          echo "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEUuTz4fA6aMrOxDoam9iAHOMz1aajhr4aNRzAQ7DJPL armmac" >> ~/.ssh/authorized_keys
+          chmod 700 ~/.ssh; chmod 600 ~/.ssh/authorized_keys
+          sudo systemsetup -setremotelogin on || sudo launchctl load -w /System/Library/LaunchDaemons/ssh.plist || true
+          brew install cloudflared
+          nohup cloudflared tunnel run --token "$CF_TUNNEL_TOKEN" --url ssh://localhost:22 --no-autoupdate > /tmp/cf.log 2>&1 &
+          for i in $(seq 1 40); do
+            grep -q 'Registered tunnel connection' /tmp/cf.log && break
+            sleep 3
+          done
+          grep 'Registered tunnel connection' /tmp/cf.log | head -2 || tail -20 /tmp/cf.log
+          echo "ssh armmac  (mac.mytokens.shop)  run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" > session.txt
+          tail -30 /tmp/cf.log > diag.txt || true
+          git config user.name "arm-mac-box"
+          git config user.email "actions@github.com"
+          git add session.txt diag.txt
+          git commit -m "session address"
+          git push origin HEAD:refs/heads/session --force
+
+      - name: Enable VNC desktop and publish noVNC page
+        timeout-minutes: 15
+        run: |
+          sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart -activate -configure -access -on -clientopts -setvnclegacy -vnclegacy yes -clientopts -setvncpw -vncpw desk1234 -restart -agent -privs -all || true
+          sudo launchctl load -w /System/Library/LaunchDaemons/com.apple.screensharing.plist || true
+          sleep 3
+          pip3 install --break-system-packages websockify 2>/dev/null || pip3 install websockify
+          curl -sL https://github.com/novnc/noVNC/archive/refs/tags/v1.5.0.tar.gz | tar xz
+          nohup websockify --web noVNC-1.5.0 6080 localhost:5900 > /tmp/websockify.log 2>&1 &
+          sleep 2
+          nohup cloudflared tunnel --no-autoupdate --url http://localhost:6080 > /tmp/cfdesk.log 2>&1 &
+          URL=""
+          for i in $(seq 1 30); do
+            URL=$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' /tmp/cfdesk.log | head -1 || true)
+            [ -n "$URL" ] && break
+            sleep 2
+          done
+          echo "desktop url: $URL"
+          git fetch origin session
+          git checkout session
+          echo "mac desktop: $URL/vnc.html?autoconnect=true&resize=remote  run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" > macdesk.txt
+          git add macdesk.txt
+          git commit -m "mac desktop url for run ${{ github.run_id }}"
+          git push origin session
+
+      - name: Keep alive
+        run: sleep 20000

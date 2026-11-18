@@ -1,0 +1,56 @@
+name: win-desktop
+
+on:
+  workflow_dispatch:
+
+jobs:
+  win:
+    runs-on: windows-latest
+    timeout-minutes: 70
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install TightVNC, noVNC and cloudflared
+        run: |
+          choco install tightvnc -y --no-progress | Out-File -Encoding utf8 install.log
+          Invoke-WebRequest -Uri "https://codeload.github.com/novnc/noVNC/zip/refs/tags/v1.5.0" -OutFile novnc.zip
+          Expand-Archive novnc.zip -DestinationPath . -Force
+          $cfUrl = "https://github.com/cloudflare/cloudflared/releases/latest/download/" + "cloudflared-windows-amd64.exe"
+          Invoke-WebRequest -Uri $cfUrl -OutFile cloudflared.exe
+          python -m pip install websockify 2>&1 | Out-File -Append -Encoding utf8 install.log
+          Write-Output "install done"
+
+      - name: Start VNC and web bridge
+        run: |
+          reg add "HKLM\SOFTWARE\TightVNC\Server" /v UseVncAuthentication /t REG_DWORD /d 0 /f
+          Start-Service tvnserver -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 3
+          Get-Service tvnserver | Format-Table -AutoSize | Out-String | Write-Output
+          Start-Process -NoNewWindow -FilePath "python" -ArgumentList "-m","websockify","--web","noVNC-1.5.0","6080","localhost:5900" -RedirectStandardOutput websockify.log -RedirectStandardError websockify.err
+          Start-Sleep -Seconds 3
+          try { (Invoke-WebRequest -UseBasicParsing http://localhost:6080/vnc.html).StatusCode } catch { Write-Output "novnc local check failed" }
+
+      - name: Expose desktop and publish URL
+        if: always()
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          Start-Process -NoNewWindow -FilePath ".\cloudflared.exe" -ArgumentList "tunnel","--no-autoupdate","--url","http://localhost:6080" -RedirectStandardOutput cf.log -RedirectStandardError cf.err
+          $url = ""
+          for ($i = 0; $i -lt 30; $i++) {
+            $m = Select-String -Path cf.err,cf.log -Pattern 'https://[a-z0-9-]+\.trycloudflare\.com' -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($m) { $url = $m.Matches[0].Value; break }
+            Start-Sleep -Seconds 2
+          }
+          Write-Output "desktop url: $url"
+          git fetch origin session
+          git checkout session
+          "win desktop: $url/vnc.html?autoconnect=true&resize=remote  run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" | Out-File -Encoding utf8 windesk.txt
+          git add windesk.txt
+          git commit -m "win desktop url for run ${{ github.run_id }}"
+          git push origin session
+
+      - name: Keep alive
+        run: Start-Sleep -Seconds 3300

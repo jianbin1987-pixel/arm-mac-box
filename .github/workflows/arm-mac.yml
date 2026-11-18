@@ -38,9 +38,10 @@ jobs:
           done
           grep 'Registered tunnel connection' /tmp/cf.log | head -2 || tail -20 /tmp/cf.log
           echo "ssh armmac  (mac.mytokens.shop)  run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" > session.txt
+          tail -30 /tmp/cf.log > diag.txt || true
           git config user.name "arm-mac-box"
           git config user.email "actions@github.com"
-          git add session.txt
+          git add session.txt diag.txt
           git commit -m "session address"
           git push origin HEAD:refs/heads/session --force
       - name: Keep alive

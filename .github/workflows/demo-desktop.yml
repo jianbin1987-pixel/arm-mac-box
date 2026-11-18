@@ -1,0 +1,59 @@
+name: demo-desktop
+
+on:
+  workflow_dispatch:
+
+jobs:
+  desktop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install desktop, VNC and noVNC
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq xfce4 xfce4-terminal tigervnc-standalone-server novnc websockify > apt.log 2>&1
+          echo "installed: $(which Xvnc websockify)"
+
+      - name: Start desktop session
+        run: |
+          Xvnc :1 -geometry 1440x900 -depth 24 -SecurityTypes None -rfbport 5901 > xvnc.log 2>&1 &
+          sleep 3
+          DISPLAY=:1 startxfce4 > xfce.log 2>&1 &
+          sleep 5
+          websockify --web /usr/share/novnc 6080 localhost:5901 > websockify.log 2>&1 &
+          sleep 2
+          curl -s -o /dev/null -w 'novnc local http: %{http_code}\n' http://localhost:6080/vnc.html
+
+      - name: Install cloudflared
+        run: |
+          curl -sL -o cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
+          chmod +x cloudflared
+          sudo mv cloudflared /usr/local/bin/
+
+      - name: Expose desktop and publish URL
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          nohup cloudflared tunnel --no-autoupdate --url http://localhost:6080 > cf.log 2>&1 &
+          URL=""
+          for i in $(seq 1 30); do
+            URL=$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' cf.log | head -1 || true)
+            [ -n "$URL" ] && break
+            sleep 2
+          done
+          echo "desktop url: $URL"
+          git fetch origin session
+          git checkout session
+          echo "desktop: $URL/vnc.html?autoconnect=true&resize=remote  run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" > desktop.txt
+          git add desktop.txt
+          git commit -m "desktop url for run ${{ github.run_id }}"
+          git push origin session
+
+      - name: Keep alive
+        run: sleep 3300

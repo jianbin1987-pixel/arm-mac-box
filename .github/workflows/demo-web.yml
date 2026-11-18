@@ -1,0 +1,60 @@
+name: demo-web
+
+on:
+  workflow_dispatch:
+
+jobs:
+  demo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    permissions:
+      contents: write
+    steps:
+      - name: Build demo page and serve it
+        run: |
+          mkdir -p site
+          {
+            echo "<!doctype html><meta charset=utf-8><title>GitHub 临时机演示</title>"
+            echo "<body style='font-family:sans-serif;max-width:640px;margin:40px auto;padding:0 16px'>"
+            echo "<h2>这页跑在一台 GitHub 的临时 Linux 机器上</h2>"
+            echo "<p>开完即焚，任务结束页面自动消失。</p><pre>"
+            echo "OS: $(lsb_release -ds 2>/dev/null || cat /etc/os-release | head -1)"
+            echo "CPU: $(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2 | xargs) x $(nproc) cores"
+            echo "RAM: $(free -h | awk '/Mem:/{print $2}')"
+            echo "Disk free: $(df -h / | awk 'NR==2{print $4}')"
+            echo "Started: $(date -u '+%Y-%m-%d %H:%M UTC')"
+            echo "</pre></body>"
+          } > site/index.html
+          nohup python3 -m http.server 8000 --directory site > http.log 2>&1 &
+          sleep 1
+          curl -s -o /dev/null -w 'local http: %{http_code}\n' http://localhost:8000/
+
+      - name: Install cloudflared
+        run: |
+          curl -sL -o cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
+          chmod +x cloudflared
+          sudo mv cloudflared /usr/local/bin/
+
+      - name: Expose via quick tunnel and publish URL
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          nohup cloudflared tunnel --no-autoupdate --url http://localhost:8000 > cf.log 2>&1 &
+          URL=""
+          for i in $(seq 1 30); do
+            URL=$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' cf.log | head -1 || true)
+            [ -n "$URL" ] && break
+            sleep 2
+          done
+          echo "tunnel url: $URL"
+          git fetch origin session
+          git checkout session
+          echo "demo web: $URL  run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" > demo.txt
+          git add demo.txt
+          git commit -m "demo url for run ${{ github.run_id }}"
+          git push origin session
+
+      - name: Keep alive
+        run: sleep 3300

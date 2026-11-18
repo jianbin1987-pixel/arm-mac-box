@@ -28,7 +28,7 @@ jobs:
           chmod 700 ~/.ssh; chmod 600 ~/.ssh/authorized_keys
           sudo systemsetup -setremotelogin on || sudo launchctl load -w /System/Library/LaunchDaemons/ssh.plist || true
           brew install cloudflared
-          nohup cloudflared tunnel --url localhost:22 --no-autoupdate > /tmp/cf.log 2>&1 &
+          nohup cloudflared tunnel --url ssh://localhost:22 --no-autoupdate > /tmp/cf.log 2>&1 &
           URL=""
           for i in $(seq 1 40); do
             URL=$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' /tmp/cf.log | head -1)

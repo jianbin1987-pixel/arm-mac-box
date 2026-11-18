@@ -22,21 +22,18 @@ jobs:
           python -m pip install websockify 2>&1 | Out-File -Append -Encoding utf8 install.log
           Write-Output "install done"
 
-      - name: Start VNC and web bridge
-        run: |
-          reg add "HKLM\SOFTWARE\TightVNC\Server" /v UseVncAuthentication /t REG_DWORD /d 0 /f
-          Start-Service tvnserver -ErrorAction SilentlyContinue
-          Start-Sleep -Seconds 3
-          Get-Service tvnserver | Format-Table -AutoSize | Out-String | Write-Output
-          Start-Process -NoNewWindow -FilePath "python" -ArgumentList "-m","websockify","--web","noVNC-1.5.0","6080","localhost:5900" -RedirectStandardOutput websockify.log -RedirectStandardError websockify.err
-          Start-Sleep -Seconds 3
-          try { (Invoke-WebRequest -UseBasicParsing http://localhost:6080/vnc.html).StatusCode } catch { Write-Output "novnc local check failed" }
-
-      - name: Expose desktop and publish URL
-        if: always()
+      - name: Serve desktop and keep alive
+        timeout-minutes: 60
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
+          reg add "HKLM\SOFTWARE\TightVNC\Server" /v UseVncAuthentication /t REG_DWORD /d 0 /f
+          Start-Service tvnserver -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 3
+          Start-Process -NoNewWindow -FilePath "python" -ArgumentList "-m","websockify","--web","noVNC-1.5.0","6080","localhost:5900" -RedirectStandardOutput websockify.log -RedirectStandardError websockify.err
+          Start-Sleep -Seconds 3
+          try { $code = (Invoke-WebRequest -UseBasicParsing http://localhost:6080/vnc.html).StatusCode } catch { $code = "FAIL" }
+          Write-Output "novnc local: $code"
           Start-Process -NoNewWindow -FilePath ".\cloudflared.exe" -ArgumentList "tunnel","--no-autoupdate","--url","http://localhost:6080" -RedirectStandardOutput cf.log -RedirectStandardError cf.err
           $url = ""
           for ($i = 0; $i -lt 30; $i++) {
@@ -45,12 +42,12 @@ jobs:
             Start-Sleep -Seconds 2
           }
           Write-Output "desktop url: $url"
+          $ws = (Get-Location).Path
           git fetch origin session
           git checkout session
           "win desktop: $url/vnc.html?autoconnect=true&resize=remote  run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" | Out-File -Encoding utf8 windesk.txt
           git add windesk.txt
           git commit -m "win desktop url for run ${{ github.run_id }}"
           git push origin session
-
-      - name: Keep alive
-        run: Start-Sleep -Seconds 3300
+          git checkout main
+          Start-Sleep -Seconds 3300

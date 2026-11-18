@@ -1,0 +1,34 @@
+name: arm-mac-box
+
+on:
+  workflow_dispatch:
+
+jobs:
+  mac:
+    runs-on: macos-15
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - name: System info
+        run: |
+          echo "=== uname ==="; uname -a
+          echo "=== chip ==="; sysctl -n machdep.cpu.brand_string
+          echo "=== cores ==="; sysctl -n hw.ncpu
+          echo "=== mem bytes ==="; sysctl -n hw.memsize
+          echo "=== macOS ==="; sw_vers
+          echo "=== disk ==="; df -h /
+      - name: Start tmate and publish address
+        run: |
+          brew install tmate
+          tmate -S /tmp/tmate.sock new-session -d
+          tmate -S /tmp/tmate.sock wait tmate-ready
+          {
+            echo "ssh: $(tmate -S /tmp/tmate.sock display -p '#{tmate_ssh}')"
+            echo "web: $(tmate -S /tmp/tmate.sock display -p '#{tmate_web}')"
+          } > session.txt
+          git config user.name "arm-mac-box"
+          git config user.email "actions@github.com"
+          git add session.txt
+          git commit -m "session address"
+          git push
+          sleep 20000

@@ -23,7 +23,7 @@ jobs:
           chmod 700 ~/.ssh; chmod 600 ~/.ssh/authorized_keys
           sudo systemsetup -setremotelogin on || sudo launchctl load -w /System/Library/LaunchDaemons/ssh.plist || true
           brew install cloudflared
-          nohup cloudflared tunnel run --token "$CF_TUNNEL_TOKEN" --url ssh://localhost:22 --no-autoupdate > /tmp/cf.log 2>&1 &
+          nohup cloudflared tunnel run --token "$CF_TUNNEL_TOKEN" --url ssh://localhost:22 > /tmp/cf.log 2>&1 &
           for i in $(seq 1 40); do
             grep -q 'Registered tunnel connection' /tmp/cf.log && break
             sleep 3

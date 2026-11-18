@@ -40,5 +40,6 @@ jobs:
           git config user.email "actions@github.com"
           git add session.txt
           git commit -m "session address"
-          git push
-          sleep 20000
+          git push origin HEAD:refs/heads/session --force
+      - name: Keep alive
+        run: sleep 20000

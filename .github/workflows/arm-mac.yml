@@ -21,21 +21,23 @@ jobs:
           echo "=== disk ==="; df -h /
       - name: Start SSH tunnel and publish address
         timeout-minutes: 12
+        env:
+          CF_TUNNEL_TOKEN: ${{ secrets.CF_TUNNEL_TOKEN }}
         run: |
           set -x
           mkdir -p ~/.ssh
           echo "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK5RUAJ6lgLGMj6l0NO91EZXJeDtOnz3c3hkmykBHGxV hatch" >> ~/.ssh/authorized_keys
+          echo "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEUuTz4fA6aMrOxDoam9iAHOMz1aajhr4aNRzAQ7DJPL armmac" >> ~/.ssh/authorized_keys
           chmod 700 ~/.ssh; chmod 600 ~/.ssh/authorized_keys
           sudo systemsetup -setremotelogin on || sudo launchctl load -w /System/Library/LaunchDaemons/ssh.plist || true
           brew install cloudflared
-          nohup cloudflared tunnel --url ssh://localhost:22 --no-autoupdate > /tmp/cf.log 2>&1 &
-          URL=""
+          nohup cloudflared tunnel run --token "$CF_TUNNEL_TOKEN" --no-autoupdate > /tmp/cf.log 2>&1 &
           for i in $(seq 1 40); do
-            URL=$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' /tmp/cf.log | head -1)
-            [ -n "$URL" ] && break
+            grep -q 'Registered tunnel connection' /tmp/cf.log && break
             sleep 3
           done
-          echo "tunnel: $URL" > session.txt
+          grep 'Registered tunnel connection' /tmp/cf.log | head -2 || tail -20 /tmp/cf.log
+          echo "ssh armmac  (mac.mytokens.shop)  run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" > session.txt
           git config user.name "arm-mac-box"
           git config user.email "actions@github.com"
           git add session.txt
